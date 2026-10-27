@@ -1,7 +1,14 @@
 #include "filters.h"
-
 #include "color.h"
 #include "image.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 const double RED_WEIGHT = 0.299;
 const double GREEN_WEIGHT = 0.587;
@@ -20,7 +27,7 @@ void Filter::ClampColors(Image& image) const {
 }
 
 CropFilter::CropFilter(size_t w, size_t h) {
-    if (w <= 0 || h <= 0) {
+    if (w == 0 || h == 0) {
         throw std::invalid_argument("width and height need to be positive");
     }
     w_ = w;
@@ -30,45 +37,36 @@ CropFilter::CropFilter(size_t w, size_t h) {
 void CropFilter::Apply(Image& image) const {
     size_t w = w_;
     size_t h = h_;
-    if (w > image.width) {
-        w = image.width;
-    }
-    if (h > image.height) {
-        h = image.height;
-    }
-    if (w == image.width && h == image.height) {
-        return;
-    }
-    Image res(w, h);
-    for (size_t y = 0; y < h; ++y) {
-        for (size_t x = 0; x < w; ++x) {
+    Image res(std::min(w, image.width), std::min(h, image.height));
+    for (size_t y = 0; y < std::min(h, image.height); ++y) {
+        for (size_t x = 0; x < std::min(w, image.width); ++x) {
             res.At(x, y) = image.At(x, y);
         }
     }
     image.Swap(res);
 }
 
-void GrayscaleFilter::Apply(Image& image) const {
+void PixelFilter::Apply(Image& image) const {
     for (size_t y = 0; y < image.height; ++y) {
         for (size_t x = 0; x < image.width; ++x) {
-            Color& c = image.At(x, y);
-            double gray = RED_WEIGHT * c.red + GREEN_WEIGHT * c.green + BLUE_WEIGHT * c.blue;
-            c.red = gray;
-            c.green = gray;
-            c.blue = gray;
+            Color& color = image.At(x, y);
+            ChangeColor(color);
+            color.Clamp();
         }
     }
 }
 
-void NegativeFilter::Apply(Image& image) const {
-    for (size_t y = 0; y < image.height; ++y) {
-        for (size_t x = 0; x < image.width; ++x) {
-            Color& c = image.At(x, y);
-            c.red = 1.0 - c.red;
-            c.green = 1.0 - c.green;
-            c.blue = 1.0 - c.blue;
-        }
-    }
+void GrayscaleFilter::ChangeColor(Color& color) const {
+    double gray = RED_WEIGHT * color.red + GREEN_WEIGHT * color.green + BLUE_WEIGHT * color.blue;
+    color.red = gray;
+    color.green = gray;
+    color.blue = gray;
+}
+
+void NegativeFilter::ChangeColor(Color& color) const {
+    color.red = 1.0 - color.red;
+    color.green = 1.0 - color.green;
+    color.blue = 1.0 - color.blue;
 }
 
 MatrixFilter::MatrixFilter() {
@@ -96,10 +94,11 @@ void MatrixFilter::Apply(Image& image) const {
             res.At(x, y) = c;
         }
     }
+    ClampColors(res);
     image.Swap(res);
 }
 
-SharpeningFilter::SharpeningFilter() {
+SharpFilter::SharpFilter() {
     matrix_[0][1] = -1.0;
     matrix_[1][0] = -1.0;
     matrix_[1][1] = SHARP_CENTER_WEIGHT;
@@ -139,7 +138,7 @@ void EdgeDetectionFilter::Apply(Image& image) const {
 
 GaussianBlurFilter::GaussianBlurFilter(double sigma) {
     if (sigma <= 0.0 || sigma > MAX_BLUR_SIGMA) {
-        throw std::invalid_argument("blur sigma need to be in [0,1000]");
+        throw std::invalid_argument("blur sigma need to be in (0,1000]");
     }
     sigma_ = sigma;
 }
@@ -192,7 +191,7 @@ void GaussianBlurFilter::Apply(Image& image) const {
 
 CircleSplashFilter::CircleSplashFilter(double cx, double cy, double r) {
     if (r <= 0.0) {
-        throw std::invalid_argument("numbers can't be negative");
+        throw std::invalid_argument("circle radius needs to be positive");
     }
     cx_ = cx;
     cy_ = cy;
@@ -214,6 +213,36 @@ void CircleSplashFilter::Apply(Image& image) const {
                 double yy = cy_ + dy * k;
                 res.At(x, y) = image.GetInterpolated(xx, yy);
             }
+        }
+    }
+    image.Swap(res);
+}
+
+CropPositionFilter::CropPositionFilter(size_t w, size_t h, std::string pos) {
+    if (w == 0 || h == 0) {
+        throw std::invalid_argument("crop_position need to be positive");
+    }
+    if (pos != "center") {
+        throw std::invalid_argument("wrong position for crop_position filter");
+    }
+    w_ = w;
+    h_ = h;
+    pos_ = pos;
+}
+
+void CropPositionFilter::Apply(Image& image) const {
+    int image_h = static_cast<int>(image.height);
+    int image_w = static_cast<int>(image.width);
+    int w = static_cast<int>(w_);
+    int h = static_cast<int>(h_);
+    int ch = image_h / 2;
+    int cw = image_w / 2;
+    int res_h = std::min(image_h, ch + (h + 1) / 2) - std::max(0, ch - h / 2);
+    int res_w = std::min(image_w, cw + (w + 1) / 2) - std::max(0, cw - w / 2);
+    Image res(res_w, res_h);
+    for (size_t y = 0; y < res_h; ++y) {
+        for (size_t x = 0; x < res_w; ++x) {
+            res.At(x, y) = image.At(x + std::max(0, cw - w / 2), y + std::max(0, ch - h / 2));
         }
     }
     image.Swap(res);

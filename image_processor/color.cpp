@@ -1,8 +1,5 @@
 #include "color.h"
 
-#include <cmath>
-#include <stdexcept>
-
 Color::Color() {
     red = 0.0;
     green = 0.0;
@@ -16,9 +13,6 @@ Color::Color(double r, double g, double b) {
 }
 
 void Color::Clamp() {
-    if (!std::isfinite(red) || !std::isfinite(green) || !std::isfinite(blue)) {
-        throw std::runtime_error("color components need to be finite");
-    }
     if (red < 0.0) {
         red = 0.0;
     }

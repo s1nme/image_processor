@@ -1,13 +1,24 @@
 #include "arguments.h"
-
 #include "filters.h"
 #include "image.h"
+
+#include <cstddef>
+#include <exception>
+#include <limits>
+#include <memory>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 const size_t DECIMAL_BASE = 10;
 
 Arguments ParseArguments(const std::vector<std::string>& args) {
     if (args.size() < 2) {
         throw std::invalid_argument("check what you need to input");
+    }
+    if (args[0].empty() || args[1].empty()) {
+        throw std::invalid_argument("input and output file names can't be empty");
     }
     Arguments res;
     res.in = args[0];
@@ -31,6 +42,9 @@ static size_t ParseNumber(const std::string& text, const std::string& name) {
             throw std::invalid_argument(name + " need to be a number: " + text);
         }
         size_t digit = static_cast<size_t>(ch - '0');
+        if (value > (std::numeric_limits<size_t>::max() - digit) / DECIMAL_BASE) {
+            throw std::invalid_argument(name + " is too large: " + text);
+        }
         value = value * DECIMAL_BASE + digit;
     }
     if (value == 0) {
@@ -53,55 +67,62 @@ static double ParseReal(const std::string& text, const std::string& name) {
     return number;
 }
 
-void ApplyFilters(const std::vector<std::string>& args, Image& img) {
+std::vector<std::unique_ptr<Filter>> CreateFilters(const std::vector<std::string>& args) {
+    std::vector<std::unique_ptr<Filter>> filters;
     size_t i = 0;
     while (i < args.size()) {
         if (args[i] == "-crop") {
             CheckCount(args, i, 2);
             size_t w = ParseNumber(args[i + 1], "crop width");
             size_t h = ParseNumber(args[i + 2], "crop height");
-            CropFilter filter(w, h);
-            filter.Apply(img);
+            filters.push_back(std::make_unique<CropFilter>(w, h));
             i += 3;
         } else if (args[i] == "-gs") {
-            GrayscaleFilter filter;
-            filter.Apply(img);
+            filters.push_back(std::make_unique<GrayscaleFilter>());
             ++i;
         } else if (args[i] == "-neg") {
-            NegativeFilter filter;
-            filter.Apply(img);
+            filters.push_back(std::make_unique<NegativeFilter>());
             ++i;
         } else if (args[i] == "-sharp") {
-            SharpeningFilter filter;
-            filter.Apply(img);
+            filters.push_back(std::make_unique<SharpFilter>());
             ++i;
         } else if (args[i] == "-edge") {
             CheckCount(args, i, 1);
             double limit = ParseReal(args[i + 1], "edge threshold");
-            EdgeDetectionFilter filter(limit);
-            filter.Apply(img);
+            filters.push_back(std::make_unique<EdgeDetectionFilter>(limit));
             i += 2;
         } else if (args[i] == "-blur") {
             CheckCount(args, i, 1);
             double sigma = ParseReal(args[i + 1], "blur sigma");
-            GaussianBlurFilter filter(sigma);
-            filter.Apply(img);
+            filters.push_back(std::make_unique<GaussianBlurFilter>(sigma));
             i += 2;
         } else if (args[i] == "-circle-splash") {
             CheckCount(args, i, 3);
             double cx = ParseReal(args[i + 1], "circle center x");
             double cy = ParseReal(args[i + 2], "circle center y");
             double r = ParseReal(args[i + 3], "circle radius");
-            CircleSplashFilter filter(cx, cy, r);
-            filter.Apply(img);
+            filters.push_back(std::make_unique<CircleSplashFilter>(cx, cy, r));
+            i += 4;
+        } else if (args[i] == "-crop_position") {
+            CheckCount(args, i, 3);
+            size_t w = ParseNumber(args[i + 1], "crop width");
+            size_t h = ParseNumber(args[i + 2], "crop height");
+            filters.push_back(std::make_unique<CropPositionFilter>(w, h, args[i + 3]));
             i += 4;
         } else {
             throw std::invalid_argument("we dont have this filter :(     : " + args[i]);
         }
     }
+    return filters;
 }
 
-void PrintHelp(std::ostream& output) {
+void ApplyFilters(const std::vector<std::unique_ptr<Filter>>& filters, Image& img) {
+    for (const std::unique_ptr<Filter>& filter : filters) {
+        filter->Apply(img);
+    }
+}
+
+void PrintHelp(std::ostream& output) {  // text was made by AI
     output << "Usage: image_processor input.bmp output.bmp [filters...]\n";
     output << "Input: uncompressed 24-bit BMP with a 40-byte BITMAPINFOHEADER.\n";
     output << "Filters are applied from left to right.\n\n";

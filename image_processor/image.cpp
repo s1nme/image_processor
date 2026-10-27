@@ -1,18 +1,14 @@
 #include "image.h"
-
 #include "color.h"
 
-const size_t MAX_IMAGE_DIMENSION = std::numeric_limits<int32_t>::max();
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+#include <vector>
 
 Image::Image(size_t w, size_t h) {
     if (w == 0 || h == 0) {
         throw std::invalid_argument("width and height need to be not zero");
-    }
-    if (w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION) {
-        throw std::invalid_argument("width and height can't be that large");
-    }
-    if (w > data_.max_size() / h) {
-        throw std::invalid_argument("too much pizels");
     }
     width = w;
     height = h;

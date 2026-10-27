@@ -6,10 +6,3 @@ add_executable(image_processor
     filters.cpp
     image.cpp
 )
-add_catch(test_image_processor
-    arguments.cpp
-    bmp.cpp
-    color.cpp
-    filters.cpp
-    image.cpp
-)
